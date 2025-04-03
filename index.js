@@ -1,5 +1,5 @@
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits } = require('discord.js');
-const { Configuration, OpenAIApi } = require('openai');
+const OpenAI = require("openai");
 require('dotenv').config();
 
 const client = new Client({ 
@@ -11,7 +11,9 @@ const client = new Client({
     ]
 });
 
-const openai = new OpenAIApi(new Configuration({ apiKey: process.env.OPENAI_API_KEY }));
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY, // Ensure your .env file contains this key
+});
 const ticketCache = new Map(); // Cache for tickets
 const closedTickets = new Map(); // Store closed tickets for reopening
 const AUTO_CLOSE_TIME = 24 * 60 * 60 * 1000; // 24 hours in ms
