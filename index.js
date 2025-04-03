@@ -12,62 +12,66 @@ const client = new Client({
 });
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // Ensure your .env file contains this key
+    apiKey: process.env.OPENAI_API_KEY
 });
-const ticketCache = new Map(); // Cache for tickets
-const closedTickets = new Map(); // Store closed tickets for reopening
-const AUTO_CLOSE_TIME = 24 * 60 * 60 * 1000; // 24 hours in ms
-const REOPEN_WINDOW = 6 * 60 * 60 * 1000; // 6-hour reopen window
+
+const ticketCache = new Map();
+const closedTickets = new Map();
+const AUTO_CLOSE_TIME = 24 * 60 * 60 * 1000;
+const REOPEN_WINDOW = 6 * 60 * 60 * 1000;
+const supportRoleIds = ['ADMIN_ROLE_ID', 'MODERATOR_ROLE_ID'];
 
 client.once('ready', async () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
+
     const guild = client.guilds.cache.first();
     if (!guild) return;
 
-    // Cache important roles & channels
-    guild.channels.cache.forEach(channel => ticketCache.set(channel.name, channel));
-    const supportRoleIds = ['ADMIN_ROLE_ID', 'MODERATOR_ROLE_ID'];
-
-    // Ensure Tickets category exists
     let ticketsCategory = guild.channels.cache.find(c => c.name === "Tickets" && c.type === ChannelType.GuildCategory);
     if (!ticketsCategory) {
         ticketsCategory = await guild.channels.create({ name: "Tickets", type: ChannelType.GuildCategory });
     }
 
-    // Ensure Ticket Panel exists
-    let ticketPanelChannel = ticketCache.get("ticket-panel");
+    let logChannel = guild.channels.cache.find(c => c.name === "ticket-logs" && c.type === ChannelType.GuildText);
+    if (!logChannel) {
+        logChannel = await guild.channels.create({
+            name: "ticket-logs",
+            type: ChannelType.GuildText
+        });
+    }
+
+    let ticketPanelChannel = guild.channels.cache.find(c => c.name === "ticket-panel" && c.type === ChannelType.GuildText);
     if (!ticketPanelChannel) {
         ticketPanelChannel = await guild.channels.create({
             name: "ticket-panel",
             type: ChannelType.GuildText,
-            permissionOverwrites: [
-                { id: guild.id, allow: [PermissionFlagsBits.ViewChannel] }
-            ]
+            permissionOverwrites: [{ id: guild.id, allow: [PermissionFlagsBits.ViewChannel] }]
         });
+
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('create_ticket').setLabel('🎫 Open a Ticket').setStyle(ButtonStyle.Primary)
         );
-        await ticketPanelChannel.send({ content: 'Click the button below to open a support ticket.', components: [row] });
+
+        await ticketPanelChannel.send({ content: 'Click below to open a support ticket.', components: [row] });
     }
 });
 
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
+    await interaction.deferReply({ ephemeral: true });  // ✅ Fix interaction failure
+
     const { guild, user } = interaction;
-    const supportRoleIds = ['ADMIN_ROLE_ID', 'MODERATOR_ROLE_ID'];
     const ticketsCategory = guild.channels.cache.find(c => c.name === "Tickets" && c.type === ChannelType.GuildCategory);
     const logChannel = guild.channels.cache.find(c => c.name === "ticket-logs" && c.type === ChannelType.GuildText);
 
     if (interaction.customId === 'create_ticket') {
-        // Check if user has a recently closed ticket
         if (closedTickets.has(user.id) && Date.now() - closedTickets.get(user.id).timestamp < REOPEN_WINDOW) {
             const oldChannel = closedTickets.get(user.id).channel;
-            await interaction.reply({ content: `✅ Reopening your previous ticket: ${oldChannel}`, ephemeral: true });
+            await interaction.editReply({ content: `✅ Reopening your previous ticket: ${oldChannel}` });
             closedTickets.delete(user.id);
             return;
         }
-        
-        // Create ticket channel
+
         const ticketChannel = await guild.channels.create({
             name: `ticket-${user.username}`,
             type: ChannelType.GuildText,
@@ -89,38 +93,36 @@ client.on('interactionCreate', async interaction => {
             content: `Hello ${user}, a support agent will assist you shortly. If you're a support agent, click "Claim Ticket" to take ownership.`,
             components: [buttons]
         });
-        
-        // AI Welcome Message
+
         try {
-            const response = await openai.createChatCompletion({
+            const response = await openai.chat.completions.create({
                 model: 'gpt-4',
                 messages: [
                     { role: 'system', content: "You are a crypto support assistant. Welcome users and offer initial guidance on crypto-related support." },
                     { role: 'user', content: "A new ticket has been opened." }
                 ]
             });
-            await ticketChannel.send(response.data.choices[0].message.content);
+            await ticketChannel.send(response.choices[0].message.content);
         } catch (error) {
             console.error("OpenAI API Error:", error);
         }
 
-        // Auto-close inactive ticket after 24 hours
         setTimeout(async () => {
             if (ticketChannel && ticketChannel.messages.cache.size === 0) {
                 await ticketChannel.delete();
                 closedTickets.set(user.id, { channel: ticketChannel, timestamp: Date.now() });
-                logChannel?.send(`⏳ Ticket auto-closed due to inactivity: ${ticketChannel.name}`);
+                logChannel?.send(`⏳ Ticket auto-closed: ${ticketChannel.name}`);
             }
         }, AUTO_CLOSE_TIME);
 
         logChannel?.send(`📌 Ticket created: ${ticketChannel}`);
-        await interaction.reply({ content: `✅ Ticket created: ${ticketChannel}`, ephemeral: true });
+        await interaction.editReply({ content: `✅ Ticket created: ${ticketChannel}` });
     } else if (interaction.customId === 'claim_ticket') {
         if (!interaction.member.roles.cache.some(role => supportRoleIds.includes(role.id))) {
-            return interaction.reply({ content: "❌ You are not authorized to claim tickets.", ephemeral: true });
+            return interaction.editReply({ content: "❌ You are not authorized to claim tickets." });
         }
         await interaction.channel.permissionOverwrites.edit(interaction.user.id, { ViewChannel: true, SendMessages: true });
-        await interaction.reply({ content: `✅ Ticket claimed by ${interaction.user}`, ephemeral: false });
+        await interaction.editReply({ content: `✅ Ticket claimed by ${interaction.user}` });
         logChannel?.send(`🎟️ Ticket claimed by ${interaction.user.tag}: ${interaction.channel.name}`);
     } else if (interaction.customId === 'close_ticket') {
         closedTickets.set(user.id, { channel: interaction.channel, timestamp: Date.now() });
