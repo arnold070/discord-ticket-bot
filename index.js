@@ -19,7 +19,7 @@ const ticketCache = new Map();
 const closedTickets = new Map();
 const AUTO_CLOSE_TIME = 24 * 60 * 60 * 1000;
 const REOPEN_WINDOW = 6 * 60 * 60 * 1000;
-const supportRoleIds = ['ADMIN_ROLE_ID', 'MODERATOR_ROLE_ID'];
+const supportRoleIds = ['1355476759344054364', '1355477311540957244'];
 
 client.once('ready', async () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
@@ -49,7 +49,7 @@ client.once('ready', async () => {
         });
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('create_ticket').setLabel('🎫 Open a Ticket').setStyle(ButtonStyle.Primary)
+            new ButtonBuilder().setCustomId('create_ticket').setLabel('🎫 Create a Ticket').setStyle(ButtonStyle.Primary)
         );
 
         await ticketPanelChannel.send({ content: 'Click below to open a support ticket.', components: [row] });
