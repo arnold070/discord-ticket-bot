@@ -21,6 +21,8 @@ const AUTO_CLOSE_TIME = 24 * 60 * 60 * 1000;
 const REOPEN_WINDOW = 6 * 60 * 60 * 1000;
 const supportRoleIds = ['1355476759344054364', '1355477311540957244'];
 
+let ticketCounter = 0; // Initialize ticket number counter
+
 client.once('ready', async () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 
@@ -65,15 +67,11 @@ client.on('interactionCreate', async interaction => {
     const logChannel = guild.channels.cache.find(c => c.name === "ticket-logs" && c.type === ChannelType.GuildText);
 
     if (interaction.customId === 'create_ticket') {
-        if (closedTickets.has(user.id) && Date.now() - closedTickets.get(user.id).timestamp < REOPEN_WINDOW) {
-            const oldChannel = closedTickets.get(user.id).channel;
-            await interaction.editReply({ content: `✅ Reopening your previous ticket: ${oldChannel}` });
-            closedTickets.delete(user.id);
-            return;
-        }
+        ticketCounter++; // Increment the ticket number each time a new ticket is created
 
+        const ticketChannelName = `ticket-${ticketCounter}-${user.username}`; // Add the ticket number as prefix
         const ticketChannel = await guild.channels.create({
-            name: `ticket-${user.username}`,
+            name: ticketChannelName,  // Use the ticket number as prefix
             type: ChannelType.GuildText,
             parent: ticketsCategory?.id,
             permissionOverwrites: [
@@ -82,6 +80,7 @@ client.on('interactionCreate', async interaction => {
                 ...supportRoleIds.map(id => ({ id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }))
             ]
         });
+
         ticketCache.set(user.id, ticketChannel);
 
         const buttons = new ActionRowBuilder().addComponents(
@@ -89,8 +88,12 @@ client.on('interactionCreate', async interaction => {
             new ButtonBuilder().setCustomId('close_ticket').setLabel('❌ Close Ticket').setStyle(ButtonStyle.Danger)
         );
 
+        // Get the support role mention
+        const supportRoleMention = supportRoleIds.map(id => `<@&${id}>`).join(', ');
+
+        // Send initial message with prefix and suffix, including the support role mention
         await ticketChannel.send({
-            content: `Hello ${user}, a support agent will assist you shortly. If you're a support agent, click "Claim Ticket" to take ownership.`,
+            content: `**Ticket ID:** #${ticketCounter} - Hello ${user}, a support agent will assist you shortly. ${supportRoleMention}, please claim this ticket.`,
             components: [buttons]
         });
 
